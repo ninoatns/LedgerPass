@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+!.env.example
+wallets.json
+data/db.json
+dist/
+*.log
+.DS_Store
+data/generated-metadata/
