@@ -27,6 +27,9 @@ export function metadataJson(event, seat) {
   };
 }
 
+/** Sérialisation canonique d'un fichier de métadonnées (indentation 2, saut de ligne final). */
+export const serializeMetadata = (event, seat) => `${JSON.stringify(metadataJson(event, seat), null, 2)}\n`;
+
 /** Retourne le contenu exact (bytes) des métadonnées ; génère le fichier s'il n'existe pas encore. */
 export function loadOrCreateMetadata(event, seat) {
   const rel = path.join(`evt-${event.id}`, `${seat}.json`);
@@ -34,12 +37,12 @@ export function loadOrCreateMetadata(event, seat) {
   if (fs.existsSync(committed)) return fs.readFileSync(committed);
   const generated = path.join(config.generatedMetadataDir, rel);
   if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(config.publicBaseUrl)) {
-    console.warn(`[mint] ${rel} absent de metadata/ (pré-générés : A-001..A-060) : fichier généré localement, `
+    console.warn(`[mint] ${rel} absent de metadata/ (pré-générés : A-001..A-300) : fichier généré localement, `
       + `son URI ${config.publicBaseUrl} ne se résoudra qu'après commit + push de metadata/${rel}`);
   }
   if (!fs.existsSync(generated)) {
     fs.mkdirSync(path.dirname(generated), { recursive: true });
-    fs.writeFileSync(generated, `${JSON.stringify(metadataJson(event, seat), null, 2)}\n`);
+    fs.writeFileSync(generated, serializeMetadata(event, seat));
   }
   return fs.readFileSync(generated);
 }

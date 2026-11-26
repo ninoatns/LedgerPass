@@ -142,7 +142,7 @@ Variables de `.env` :
 
 Le serveur **refuse de démarrer** si un jeton est vide, vaut `change-me…` ou fait moins de 16 caractères.
 
-**Métadonnées.** `metadata/evt-1/A-001.json` … `A-060.json` sont pré-générées et committées : l'URI du NFT (`<PUBLIC_BASE_URL>/metadata/evt-1/A-0xx.json`, 84 octets ≤ 256) se résout publiquement sur GitHub une fois le dépôt poussé. L'API sert aussi `/metadata` en local pour le front. Au-delà du siège A-060, le fichier est généré dans `data/generated-metadata/` (non commité, avertissement dans les logs). L'intégrité ne dépend pas de l'hébergement : le sha256 du fichier est inscrit dans le Memo `ledgerpass/mint`.
+**Métadonnées.** `metadata/evt-1/A-001.json` … `A-300.json` sont pré-générées et committées : l'URI du NFT (`<PUBLIC_BASE_URL>/metadata/evt-1/A-xxx.json`, 84 octets ≤ 256) se résout publiquement sur GitHub une fois le dépôt poussé. L'API sert aussi `/metadata` en local pour le front. Le compteur de sièges est local (`data/db.json`) et repart à A-001 sur une nouvelle installation ; au-delà de A-300, les métadonnées sont générées localement dans `data/generated-metadata/` (non commité, avertissement dans les logs) et leur URI GitHub renvoie 404. Pour pré-générer davantage de sièges : `npm run gen:metadata -- --count N` (idempotent, ne réécrit jamais un fichier existant), puis commit + push. L'intégrité ne dépend pas de l'hébergement : le sha256 du fichier est inscrit dans le Memo `ledgerpass/mint`.
 
 ## 6. Réseau utilisé
 
@@ -284,7 +284,7 @@ Le scénario complet a aussi été joué dans le navigateur (Playwright) contre 
 - **Pouvoir de l'organisateur** : il peut brûler tout billet `tfBurnable` et fixe seul le plafond ; c'est le tiers de confiance assumé du modèle (actions visibles on-chain).
 - **QR** : signé et valable 60 s, mais une capture partagée dans la minute reste utilisable une fois (le premier scan brûle le billet).
 - **Contrôle d'entrée en ligne** : il faut joindre le Testnet pour brûler le billet (≈ 4 s par entrée).
-- **Métadonnées hors chaîne** (GitHub / serveur) : seul leur sha256 est on-chain ; 60 fichiers pré-générés.
+- **Métadonnées hors chaîne** (GitHub / serveur) : seul leur sha256 est on-chain ; 300 fichiers pré-générés (A-001…A-300).
 - **Verrous en mémoire** d'un seul processus API ; ne pas lancer l'e2e en même temps que la démo (mêmes comptes).
 
 ## 14. Structure du dépôt
@@ -301,9 +301,10 @@ LedgerPass/
 │   ├── setup-accounts.js               npm run setup   — création/financement des comptes
 │   ├── check-network.js                npm run check   — test des nœuds
 │   ├── e2e-demo.js                     npm run e2e     — scénario complet (test + plan B)
-│   └── cleanup-offers.js               npm run cleanup — annulation des offres orphelines
+│   ├── cleanup-offers.js               npm run cleanup — annulation des offres orphelines
+│   └── gen-metadata.js                 npm run gen:metadata — pré-génération des métadonnées (idempotent)
 ├── web/                                front Vite : index.html (billetterie), scan.html (contrôle d'entrée), src/
-├── metadata/evt-1/A-001…A-060.json     métadonnées pré-générées (URI publique GitHub + servies sur /metadata)
+├── metadata/evt-1/A-001…A-300.json     métadonnées pré-générées (URI publique GitHub + servies sur /metadata)
 ├── data/db.sample.json                 base initiale (catalogue) ; db.json est local, non commité
 ├── test/                               tests unitaires (npm test)
 ├── demo/last-run.md                    hash de la dernière exécution e2e

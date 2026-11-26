@@ -12,6 +12,7 @@
     "setup": "node scripts/setup-accounts.js",
     "e2e": "node scripts/e2e-demo.js",
     "cleanup": "node scripts/cleanup-offers.js",
+    "gen:metadata": "node scripts/gen-metadata.js",
     "dev": "node server/src/index.js",
     "dev:web": "vite web --port 5173",
     "build:web": "vite build web",

@@ -1,0 +1,24 @@
+{
+  "name": "XRPL Night Live — Démo LedgerPass — siège A-068",
+  "description": "Billet LedgerPass (PoC, XRPL Testnet). Non transférable hors organisateur, brûlé à l'entrée.",
+  "eventId": 1,
+  "seat": "A-068",
+  "attributes": [
+    {
+      "trait_type": "event",
+      "value": "XRPL Night Live — Démo LedgerPass"
+    },
+    {
+      "trait_type": "date",
+      "value": "2026-12-12T20:00:00+01:00"
+    },
+    {
+      "trait_type": "venue",
+      "value": "Salle fictive, Paris"
+    },
+    {
+      "trait_type": "seat",
+      "value": "A-068"
+    }
+  ]
+}
