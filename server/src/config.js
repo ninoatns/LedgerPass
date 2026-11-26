@@ -8,9 +8,10 @@ export const ENV_PATH = path.join(ROOT, '.env');
 
 dotenv.config({ path: ENV_PATH, quiet: true });
 
+// xrpl-labs en premier : seul nœud joignable derrière le proxy du conteneur et sur le Wi-Fi de l'école (port 51233 bloqué).
 const DEFAULT_WS = [
-  'wss://s.altnet.rippletest.net:51233',
   'wss://testnet.xrpl-labs.com',
+  'wss://s.altnet.rippletest.net:51233',
   'wss://testnet.honeycluster.io',
 ];
 
@@ -18,12 +19,18 @@ export const config = {
   root: ROOT,
   envPath: ENV_PATH,
   port: Number(process.env.PORT || 3000),
+  host: process.env.HOST || '127.0.0.1', // écoute locale uniquement par défaut
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
+    .split(',').map((s) => s.trim()).filter(Boolean),
   wsUrls: (process.env.XRPL_WS_URLS || DEFAULT_WS.join(','))
     .split(',').map((s) => s.trim()).filter(Boolean),
   connectTimeoutMs: Number(process.env.XRPL_CONNECT_TIMEOUT_MS || 10000),
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, ''),
-  adminToken: process.env.ADMIN_TOKEN || 'change-me-admin',
-  gateToken: process.env.GATE_TOKEN || 'change-me-gate',
+  // Pas de valeur par défaut : le serveur refuse de démarrer avec un jeton vide/faible (cf. security.js).
+  adminToken: process.env.ADMIN_TOKEN || '',
+  gateToken: process.env.GATE_TOKEN || '',
+  testnetNetworkId: 1,
+  qrMaxAgeSeconds: 60, // durée de validité d'un QR signé
   faucetUrl: process.env.XRPL_FAUCET_URL || 'https://faucet.altnet.rippletest.net/accounts',
   proxy: process.env.HTTPS_PROXY || process.env.https_proxy || '',
   dbPath: path.join(ROOT, 'data', 'db.json'),

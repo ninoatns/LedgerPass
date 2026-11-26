@@ -7,6 +7,7 @@ import { config } from '../config.js';
 let client = null;
 let currentUrl = null;
 let connecting = null;
+let lastError = null;
 const MAX_LEDGER_AGE_S = 60;
 
 export function proxyAgent() {
@@ -19,8 +20,10 @@ async function tryConnect(url) {
   if (agent) opts.agent = agent;
   const c = new xrpl.Client(url, opts);
   c.on('error', () => {}); // évite un crash sur erreur réseau asynchrone
-  const timer = new Promise((_, rej) =>
-    setTimeout(() => rej(new Error(`timeout ${config.connectTimeoutMs} ms`)), config.connectTimeoutMs + 500));
+  let timerId;
+  const timer = new Promise((_, rej) => {
+    timerId = setTimeout(() => rej(new Error(`timeout ${config.connectTimeoutMs} ms`)), config.connectTimeoutMs + 500);
+  });
   try {
     await Promise.race([c.connect(), timer]);
     // Un noeud peut répondre mais être figé sur un ancien Testnet (ex. après un reset) : on le rejette.
@@ -29,10 +32,18 @@ async function tryConnect(url) {
     if (age === undefined || age > MAX_LEDGER_AGE_S) {
       throw new Error(`noeud désynchronisé (dernier ledger validé il y a ${age ?? '?'} s, état ${info.server_state})`);
     }
+    // Garde-fou Testnet : network_id 1. Certains noeuds ne le renvoient pas -> simple avertissement.
+    if (info.network_id === undefined || info.network_id === null) {
+      console.warn(`[xrpl] ${url} ne renvoie pas network_id : impossible de vérifier qu'il s'agit du Testnet`);
+    } else if (Number(info.network_id) !== config.testnetNetworkId) {
+      throw new Error(`network_id ${info.network_id} ≠ ${config.testnetNetworkId} : ce noeud n'est pas le Testnet`);
+    }
     return c;
   } catch (e) {
     try { await c.disconnect(); } catch { /* ignore */ }
     throw e;
+  } finally {
+    clearTimeout(timerId);
   }
 }
 
@@ -57,12 +68,26 @@ export async function getClient() {
   if (connecting) return connecting;
   connecting = (async () => {
     try { if (client) await client.disconnect(); } catch { /* ignore */ }
-    const r = await connectAny(config.wsUrls, { log: (m) => console.log(m) });
-    client = r.client;
-    currentUrl = r.url;
-    return client;
+    client = null;
+    currentUrl = null;
+    try {
+      const r = await connectAny(config.wsUrls, { log: (m) => console.log(m) });
+      client = r.client;
+      currentUrl = r.url;
+      lastError = null;
+      return client;
+    } catch (e) {
+      lastError = e.message;
+      throw e;
+    }
   })();
   try { return await connecting; } finally { connecting = null; }
+}
+
+/** État de connexion sans attendre (pour /health) : 'connected' | 'connecting' | 'disconnected'. */
+export function connectionState() {
+  if (client && client.isConnected()) return { status: 'connected', client, url: currentUrl };
+  return { status: connecting ? 'connecting' : 'disconnected', client: null, url: null, lastError };
 }
 
 export const getNetworkUrl = () => currentUrl;

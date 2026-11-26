@@ -1,8 +1,9 @@
 import { config, AppError } from '../config.js';
+import { safeEqual } from '../security.js';
 
 export function requireToken(header, expected) {
   return (req, _res, next) => {
-    if (req.get(header) !== expected) return next(new AppError(401, `${header} manquant ou invalide`, 'HTTP'));
+    if (!safeEqual(req.get(header) || '', expected)) return next(new AppError(401, `${header} manquant ou invalide`, 'HTTP'));
     return next();
   };
 }
@@ -16,6 +17,8 @@ export function errorHandler(err, _req, res, _next) {
   if (err.hash) body.hash = err.hash;
   if (err.reason !== undefined) { body.granted = false; body.reason = err.reason; }
   if (err.extra?.txs?.length) body.txs = err.extra.txs;
+  if (err.extra?.stage) body.stage = err.extra.stage;
+  if (err.extra && 'currentOwner' in err.extra) body.currentOwner = err.extra.currentOwner;
   if (status >= 500) console.error('[api]', err.stack || err);
   res.status(status).json(body);
 }

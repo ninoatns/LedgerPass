@@ -9,7 +9,7 @@ import * as store from '../store.js';
 
 export class XrplTxError extends AppError {
   constructor(code, hash, step, message) {
-    super(409, message || `${step}: ${code}`, code, hash);
+    super(code === 'TX_UNKNOWN' ? 504 : 409, message || `${step}: ${code}`, code, hash);
     this.result = code;
     this.step = step;
   }
@@ -27,18 +27,42 @@ function serialize(account, fn) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitValidated(client, hash, lastLedger) {
-  for (;;) {
-    await sleep(1000);
+export const WAIT_VALIDATION_MS = 90_000; // borne dure de l'attente de validation (≈ 90 s)
+
+/**
+ * Attend la validation de `hash`. Utilise le client COURANT à chaque itération (getClient reconnecte
+ * si la WebSocket est tombée) et réessaie sur erreur réseau.
+ * - résultat validé -> renvoyé ;
+ * - LastLedgerSequence dépassé sans trace de la tx -> null (expirée, définitivement non appliquée) ;
+ * - au-delà de `timeoutMs` (coupure réseau prolongée, nœud muet) -> XrplTxError('TX_UNKNOWN') :
+ *   la tx a pu être validée ou non, il faut vérifier le hash sur l'explorer.
+ */
+export async function waitValidated(hash, lastLedger, {
+  step = 'tx', timeoutMs = WAIT_VALIDATION_MS, pollMs = 1000, clientFn = getClient,
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let transient = 0;
+  const onTransient = (e) => {
+    transient += 1;
+    if (transient === 1 || transient % 10 === 0) console.warn(`[xrpl] attente ${hash.slice(0, 10)}… : erreur réseau (${e.message}), nouvel essai`);
+  };
+  while (Date.now() < deadline) {
+    await sleep(pollMs);
+    let client;
     try {
+      client = await clientFn();
       const r = await client.request({ command: 'tx', transaction: hash });
       if (r.result.validated) return r.result;
     } catch (e) {
-      if (e?.data?.error !== 'txnNotFound') throw e;
+      if (e?.data?.error !== 'txnNotFound') { onTransient(e); continue; }
     }
-    const current = await client.getLedgerIndex();
-    if (current > lastLedger) return null;
+    try {
+      const current = await client.getLedgerIndex();
+      if (lastLedger && current > lastLedger) return null;
+    } catch (e) { onTransient(e); }
   }
+  throw new XrplTxError('TX_UNKNOWN', hash, step,
+    `${step}: statut inconnu après ${Math.round(timeoutMs / 1000)} s (réseau) — vérifiez le hash ${explorer(hash)}`);
 }
 
 function log(entry) {
@@ -60,16 +84,25 @@ export function submit(tx, wallet, { step = tx.TransactionType, nftId } = {}) {
       const res = await client.request({ command: 'submit', tx_blob: signed.tx_blob });
       prelim = res.result.engine_result;
     } catch (e) {
-      const code = e?.data?.error || 'SUBMIT_ERROR';
+      // Erreur rippled explicite -> refus net. Erreur réseau (pas de e.data) -> la tx a pu partir : statut inconnu.
+      const code = e?.data?.error || 'TX_UNKNOWN';
       log({ step, hash, result: code, explorer: explorer(hash), nftId });
-      throw new XrplTxError(code, hash, step, `${step}: soumission refusée (${code})`);
+      throw new XrplTxError(code, hash, step, code === 'TX_UNKNOWN'
+        ? `${step}: statut inconnu (soumission interrompue : ${e.message}) — vérifiez le hash ${explorer(hash)}`
+        : `${step}: soumission refusée (${code})`);
     }
     if (/^(tef|tem|tel)/.test(prelim)) {
       // Jamais appliquée au ledger (pas de frais) : échec immédiat et définitif.
       log({ step, hash, result: prelim, explorer: explorer(hash), nftId });
       throw new XrplTxError(prelim, hash, step);
     }
-    const final = await waitValidated(client, hash, prepared.LastLedgerSequence);
+    let final;
+    try {
+      final = await waitValidated(hash, prepared.LastLedgerSequence, { step });
+    } catch (e) {
+      if (e instanceof XrplTxError) log({ step, hash, result: e.code, explorer: explorer(hash), nftId });
+      throw e;
+    }
     if (!final) {
       log({ step, hash, result: prelim || 'EXPIRED', explorer: explorer(hash), nftId });
       throw new XrplTxError(prelim && prelim !== 'tesSUCCESS' ? prelim : 'TX_EXPIRED', hash, step,
