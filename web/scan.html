@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LedgerPass — Contrôle d'entrée</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b5cff'/%3E%3Cpath d='M9 8h4v13h9v4H9z' fill='white'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body class="scan-page">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">L</span>
+      <div>
+        <h1>Contrôle d'entrée</h1>
+        <p class="tagline">Scan du billet → NFTokenBurn on-chain : un billet ne sert qu'une fois</p>
+      </div>
+    </div>
+    <a class="btn ghost small" id="back-link" href="./index.html">← Billetterie</a>
+  </header>
+  <div class="status" id="status"><span class="pill">Connexion au backend…</span></div>
+
+  <main class="scan-main">
+    <div class="card">
+      <h2>Jeton de contrôle</h2>
+      <div class="row">
+        <input id="gate-token" class="grow" type="password" autocomplete="off" placeholder="X-Gate-Token (cf. .env du serveur)" />
+        <button id="gate-save" class="btn">Enregistrer</button>
+      </div>
+      <p class="hint" id="gate-state"></p>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Scanner le QR code</h2>
+        <div id="reader" class="reader"></div>
+        <div class="row">
+          <button id="cam-start" class="btn primary">Démarrer la caméra</button>
+          <button id="cam-stop" class="btn ghost" disabled>Arrêter</button>
+        </div>
+        <p class="hint">La caméra exige HTTPS ou <code>localhost</code>. Sinon, utilisez la saisie manuelle.</p>
+        <div id="cam-msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Saisie manuelle</h2>
+        <label><span>Contenu du QR (JSON) <small>ou NFTokenID seul</small></span>
+          <textarea id="manual-json" rows="4" class="mono" placeholder='{"nftId":"0001…","holder":"r…"}'></textarea>
+        </label>
+        <label>Adresse du porteur (si non incluse ci-dessus)
+          <input id="manual-holder" class="mono" placeholder="r…" />
+        </label>
+        <button id="manual-btn" class="btn primary">Valider l'entrée</button>
+        <div id="manual-msg"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Derniers contrôles</h2>
+      <div id="history" class="muted">Aucun contrôle pour l'instant.</div>
+    </div>
+  </main>
+
+  <div id="verdict" class="verdict" hidden>
+    <div class="verdict-inner">
+      <div class="verdict-icon" id="verdict-icon"></div>
+      <div class="verdict-title" id="verdict-title"></div>
+      <div class="verdict-detail" id="verdict-detail"></div>
+      <button id="verdict-close" class="btn big">Billet suivant</button>
+    </div>
+  </div>
+
+  <script type="module" src="./src/scan.js"></script>
+</body>
+</html>

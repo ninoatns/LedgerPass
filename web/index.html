@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LedgerPass — Billetterie NFT XRPL</title>
+  <meta name="description" content="PoC de billetterie NFT anti-revente sur XRPL Testnet" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b5cff'/%3E%3Cpath d='M9 8h4v13h9v4H9z' fill='white'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">L</span>
+      <div>
+        <h1>LedgerPass</h1>
+        <p class="tagline">Billets NFT non transférables · revente plafonnée · XRPL Testnet</p>
+      </div>
+    </div>
+    <div class="actor-picker" role="group" aria-label="Acteur courant">
+      <span class="actor-label">Je suis :</span>
+      <button type="button" class="actor" data-who="org">Organisateur</button>
+      <button type="button" class="actor" data-who="alice">Alice</button>
+      <button type="button" class="actor" data-who="bob">Bob</button>
+    </div>
+  </header>
+  <div class="status" id="status"><span class="pill">Connexion au backend…</span></div>
+
+  <nav class="tabs" role="tablist">
+    <a role="tab" href="#org" data-tab="org">1 · Organisateur</a>
+    <a role="tab" href="#shop" data-tab="shop">2 · Boutique</a>
+    <a role="tab" href="#mine" data-tab="mine">3 · Mes billets</a>
+    <a role="tab" href="#log" data-tab="log">4 · Journal</a>
+    <a class="tab-ext" id="scan-link" href="./scan.html">Contrôle d'entrée ↗</a>
+  </nav>
+
+  <main>
+    <!-- 1. Organisateur -->
+    <section class="panel" id="tab-org" role="tabpanel">
+      <div class="grid2">
+        <div class="card">
+          <h2>Émettre des billets</h2>
+          <label>Événement
+            <select id="event-select"></select>
+          </label>
+          <div id="event-info" class="event-info"></div>
+          <div class="row">
+            <label class="grow">Nombre de billets
+              <input id="mint-count" type="number" min="1" max="20" value="3" />
+            </label>
+            <label class="grow">Jeton admin (X-Admin-Token)
+              <input id="admin-token" type="password" autocomplete="off" placeholder="cf. .env du serveur" />
+            </label>
+          </div>
+          <button id="mint-btn" class="btn primary">Minter les billets</button>
+          <p class="hint">Chaque billet = 1 <code>NFTokenMint</code> avec <code>Flags = tfBurnable</code> et <strong>sans</strong> <code>tfTransferable</code>.</p>
+          <div id="mint-tl"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>Stock de l'organisateur <small>(on-chain)</small></h2>
+            <button id="org-refresh" class="btn ghost small">Rafraîchir</button>
+          </div>
+          <div id="org-stock"></div>
+          <h3>Billets mintés pendant cette session</h3>
+          <div id="minted-list" class="muted">Aucun pour l'instant.</div>
+          <h3>Vérifier un billet on-chain</h3>
+          <div class="row">
+            <input id="lookup-id" class="grow mono" placeholder="NFTokenID (64 hex)" />
+            <button id="lookup-btn" class="btn">Vérifier</button>
+          </div>
+          <div id="lookup-res"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Boutique -->
+    <section class="panel" id="tab-shop" role="tabpanel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>Billets disponibles <small>(vente primaire)</small></h2>
+          <button id="shop-refresh" class="btn ghost small">Rafraîchir</button>
+        </div>
+        <p class="hint" id="shop-hint"></p>
+        <div id="shop-list" class="tickets"></div>
+        <div id="buy-tl"></div>
+      </div>
+    </section>
+
+    <!-- 3. Mes billets -->
+    <section class="panel" id="tab-mine" role="tabpanel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2 id="mine-title">Mes billets</h2>
+          <button id="mine-refresh" class="btn ghost small">Rafraîchir</button>
+        </div>
+        <div id="mine-tl"></div>
+        <div id="mine-list" class="tickets wide"></div>
+      </div>
+    </section>
+
+    <!-- 4. Journal -->
+    <section class="panel" id="tab-log" role="tabpanel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>Soldes</h2>
+          <button id="bal-refresh" class="btn ghost small">Rafraîchir</button>
+        </div>
+        <div id="balances" class="balances"></div>
+        <p class="hint">La variation (depuis l'ouverture de la page ou le dernier rafraîchissement) montre la commission de l'organisateur (5 %) prélevée à chaque revente.</p>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Journal des transactions <small>(session, plus récent en premier)</small></h2>
+          <button id="tx-refresh" class="btn ghost small">Rafraîchir</button>
+        </div>
+        <div id="tx-log"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    PoC hackathon XRPL — Testnet uniquement. Acteurs fictifs (Alice, Bob). Aucune donnée personnelle on-chain.
+  </footer>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
