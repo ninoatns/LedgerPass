@@ -1,23 +1,23 @@
 # Dernière exécution du scénario e2e
 
-- Date : 2026-11-26T11:45:50.757Z
+- Date : 2026-11-26T13:58:12.679Z
 - Réseau : `wss://testnet.xrpl-labs.com`
-- Comptes : org `rhbNH2oD69dnQ6jebAmqkuTezt1YNa5qwu`, alice `rpcVkpNjwZ5UXpPnwtJufvDoe7cjrVUy3p`, bob `rGtCFKQrUnHa1XjjqM7oo98mdmc7CMZKQj`
+- Comptes : org `rE8mC4pJ59CXpjN3NUap9Yjx3qBH2GJxxy`, alice `rZNNhwpHAyChhdVgGxo3ZMjARB89ETExZ`, bob `rKNDW4wkuRuHD7NTJE9F46pcYb8E57DXqS`
 - Statut : **SUCCÈS**
-- Billet suivi : siège **A-044**, NFTokenID `0001000027619C4E54C6A0E857636B4A0FEBCC54695C89F48F56A5CE00002834` ([explorer](https://testnet.xrpl.org/nft/0001000027619C4E54C6A0E857636B4A0FEBCC54695C89F48F56A5CE00002834))
+- Billet suivi : siège **A-001**, NFTokenID `00010000A239C2BF3FD6E1D88655029843C244EAAD595B2BB441F07D000035E1` ([explorer](https://testnet.xrpl.org/nft/00010000A239C2BF3FD6E1D88655029843C244EAAD595B2BB441F07D000035E1))
 
 | Étape | Transaction | Hash | Résultat | Lien |
 |---|---|---|---|---|
-| 1 mint | mint:A-044 | `2D35D979168E2A02731CAF26082FB55E294F1B3E39B284DA7C5954B2463A7A80` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/2D35D979168E2A02731CAF26082FB55E294F1B3E39B284DA7C5954B2463A7A80) |
-| 1 mint | mint:A-045 | `B6EAF62480D15E8DF4CD37CB703CA71BFCE26A079498AD2D72D0053AC4FE5569` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/B6EAF62480D15E8DF4CD37CB703CA71BFCE26A079498AD2D72D0053AC4FE5569) |
-| 1 mint | mint:A-046 | `77FC1CA1DC576B68BBE4807721BC5A2EE2A8D149A6670722A684933EC4E945E2` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/77FC1CA1DC576B68BBE4807721BC5A2EE2A8D149A6670722A684933EC4E945E2) |
-| 2 vente primaire | primary:sell-offer | `D58F6677E379B4B3922A86BA2C4BDD195BA71F38C8BAE6D5062EE757D82D225F` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/D58F6677E379B4B3922A86BA2C4BDD195BA71F38C8BAE6D5062EE757D82D225F) |
-| 2 vente primaire | primary:accept | `804DE65F0CEB387F2FB681F4E4443DDE96EFBEF58D54C61B57116240529411CA` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/804DE65F0CEB387F2FB681F4E4443DDE96EFBEF58D54C61B57116240529411CA) |
-| 3 revente directe | direct:seller-sell-offer | `2674A8C9C508EC39BE37C5D5145603C7F5BCAD0BEC3C351F2624BCDFD6CCB46C` | tefNFTOKEN_IS_NOT_TRANSFERABLE | non appliquée au ledger |
-| 4 revente via org | resale:org-buy-offer | `03A52CB5ADFBA18CD86748FBA5A5D8C24F928004068812D94F71948C63D4A65F` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/03A52CB5ADFBA18CD86748FBA5A5D8C24F928004068812D94F71948C63D4A65F) |
-| 4 revente via org | resale:seller-accept | `9F91DE2A096514B490450DC1F7FE1779B6F5C4040BC9911BC73A58FAD2A75D1A` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/9F91DE2A096514B490450DC1F7FE1779B6F5C4040BC9911BC73A58FAD2A75D1A) |
-| 4 revente via org | resale:org-sell-offer | `0328D1DBB8E17B46AFCADC63311FDAC2A74D7054CF4FBE6EC4E609E7579A40C9` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/0328D1DBB8E17B46AFCADC63311FDAC2A74D7054CF4FBE6EC4E609E7579A40C9) |
-| 4 revente via org | resale:buyer-accept | `43CD4E49D764BBA15EFEAF72638C44DD91EB6F1558CF7FDF7214A2CD64C5E378` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/43CD4E49D764BBA15EFEAF72638C44DD91EB6F1558CF7FDF7214A2CD64C5E378) |
+| 1 mint | mint:A-001 | `92EED249BC908067E7051382629011423306B1EF120B26FE7DB10F90C47A1276` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/92EED249BC908067E7051382629011423306B1EF120B26FE7DB10F90C47A1276) |
+| 1 mint | mint:A-002 | `EB48F274AFBD4B95E0474368DFCF58D017A64D22C168B20E62BF2FEC891F74C6` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/EB48F274AFBD4B95E0474368DFCF58D017A64D22C168B20E62BF2FEC891F74C6) |
+| 1 mint | mint:A-003 | `DC1D547232FA6AE55FB868546EE5613D4C3D295A6A22EA755A9B17FA5D01AA66` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/DC1D547232FA6AE55FB868546EE5613D4C3D295A6A22EA755A9B17FA5D01AA66) |
+| 2 vente primaire | primary:sell-offer | `2408A6FB5B05F4D8C060A44835D19C10C48DA563D7C38C87D58EDA6528EB1845` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/2408A6FB5B05F4D8C060A44835D19C10C48DA563D7C38C87D58EDA6528EB1845) |
+| 2 vente primaire | primary:accept | `35528258BB6B2D7769AC7A1113A288DF904F20EB0050563FB57682BAFE260EE8` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/35528258BB6B2D7769AC7A1113A288DF904F20EB0050563FB57682BAFE260EE8) |
+| 3 revente directe | direct:seller-sell-offer | `0A127F0F5F148D93C4DC1E47D74BC0245678B3187989553BA1766B2CE45890E0` | tefNFTOKEN_IS_NOT_TRANSFERABLE | non appliquée au ledger |
+| 4 revente via org | resale:org-buy-offer | `849FCE4B1DFA7D597BA938B1733AC5C3C501FB577DE924C2D7231460ECE81D4F` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/849FCE4B1DFA7D597BA938B1733AC5C3C501FB577DE924C2D7231460ECE81D4F) |
+| 4 revente via org | resale:seller-accept | `2FB18CD916427549FF3264C23040BD13DBB54487EF9A13663B4FE432CE9F63E9` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/2FB18CD916427549FF3264C23040BD13DBB54487EF9A13663B4FE432CE9F63E9) |
+| 4 revente via org | resale:org-sell-offer | `B45CB3019F122F0D15FD18C28D0BE1FFF075A9EE3E18A38A8AE59BB18D00029B` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/B45CB3019F122F0D15FD18C28D0BE1FFF075A9EE3E18A38A8AE59BB18D00029B) |
+| 4 revente via org | resale:buyer-accept | `099DACB4FCA6EE92AE622896EEAF9CD44FF35A32A6208523F1D093FE4A71584C` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/099DACB4FCA6EE92AE622896EEAF9CD44FF35A32A6208523F1D093FE4A71584C) |
 | 5 plafond | - | - | refusé (HTTP 400) : prix 30 XRP supérieur au plafond 25 XRP | - |
 | 6 refus | - | - | QR non signé : QR non signé : régénérez le QR depuis « Mes billets » | - |
 | 6 refus | - | - | QR expiré : QR expiré (120 s, validité 60 s) : le porteur doit afficher le QR à jour | - |
@@ -27,7 +27,7 @@
 | 6 refus | - | - | mauvais détenteur (alice) : le porteur ne détient pas ce billet (mauvais détenteur ou billet inexistant) | - |
 | 6 refus | - | - | porteur = org (billet invendu) : porteur = organisateur : billet invendu, il ne donne pas accès | - |
 | 6 refus | - | - | autre événement contrôlé : billet de l'événement 1, contrôle de l'événement 2 | - |
-| 7 check-in | gate:checkin-burn | `DFB989352F29BD9DAB049D400A0FBDE49DF93A4835FDE5A158D412CF271D2C8B` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/DFB989352F29BD9DAB049D400A0FBDE49DF93A4835FDE5A158D412CF271D2C8B) |
+| 7 check-in | gate:checkin-burn | `BFBC1D3706B31EA011603497251532F23F1F0374BB46097EB6E2A9FEDF44AA49` | tesSUCCESS | [explorer](https://testnet.xrpl.org/transactions/BFBC1D3706B31EA011603497251532F23F1F0374BB46097EB6E2A9FEDF44AA49) |
 | 8 rescan | - | - | refusé : billet déjà utilisé (brûlé) | - |
 | 9 revente billet brûlé | - | - | refusé : bob ne détient pas ce billet (absent de account_nfts : brûlé ou déjà revendu) | - |
 
