@@ -10,8 +10,10 @@ import { splitResale, withinCap, assertPositiveXrp, dropsToXrp, xrpToDrops } fro
 import * as query from './query.js';
 import * as offers from './offers.js';
 import { XrplTxError } from '../xrpl/tx.js';
+import * as locks from './locks.js';
+import * as store from '../store.js';
 
-const locks = new Set();
+export const MIN_RESALE_XRP = 1;
 
 async function validate({ nftId, seller, buyer, priceXrp }) {
   const id = String(nftId || '').toUpperCase();
@@ -21,56 +23,93 @@ async function validate({ nftId, seller, buyer, priceXrp }) {
   if (s.address === b.address) throw new AppError(400, 'vendeur et acheteur identiques', 'HTTP');
   if (s.who === 'org' || b.who === 'org') throw new AppError(400, "la revente se fait entre détenteurs (pas l'organisateur)", 'HTTP');
   try { assertPositiveXrp(priceXrp); } catch (e) { throw new AppError(400, e.message, 'HTTP'); }
+  if (xrpToDrops(priceXrp) < xrpToDrops(MIN_RESALE_XRP)) {
+    throw new AppError(400, `prix minimum de revente : ${MIN_RESALE_XRP} XRP`, 'HTTP');
+  }
   return { id, s, b };
+}
+
+/** Relit on-chain le détenteur actuel après un échec (best-effort). */
+async function readCurrentOwner(id) {
+  try {
+    const h = await query.findHolder(id);
+    return h ? { who: h.who, address: h.address } : { who: null, address: null };
+  } catch (e) {
+    return { who: 'inconnu', address: null, error: e.message };
+  }
+}
+
+function failureMessage(stage, owner, seller, buyer, cause) {
+  let state;
+  if (owner.who === 'org') state = "billet conservé par l'organisateur, vendeur payé — marqué « en suspens », retiré de la Boutique (remboursement ou relance manuels, voir le Journal)";
+  else if (owner.who === seller) state = 'billet toujours chez le vendeur, aucun paiement effectué';
+  else if (owner.who === buyer) state = "billet chez l'acheteur : la dernière transaction a abouti malgré l'erreur (vérifiez le Journal)";
+  else if (owner.who === 'inconnu') state = `détenteur actuel illisible (${owner.error}) : vérifiez le Journal`;
+  else state = 'billet introuvable chez org/vendeur/acheteur';
+  return `revente interrompue à l'étape ${stage} : ${state}. Cause : ${cause}`;
 }
 
 export async function resale({ nftId, seller, buyer, priceXrp }) {
   const { id, s, b } = await validate({ nftId, seller, buyer, priceXrp });
-  const nft = await query.holds(s.address, id);
-  if (!nft) throw new AppError(409, `${s.who} ne détient pas ce billet (absent de account_nfts : brûlé ou déjà revendu)`, 'HTTP');
-  const event = query.eventOrThrow(nft.NFTokenTaxon);
-  if (!withinCap(priceXrp, event.capXrp)) {
-    throw new AppError(400, `prix ${priceXrp} XRP supérieur au plafond ${event.capXrp} XRP`, 'HTTP');
-  }
-  if (locks.has(id)) throw new AppError(409, 'revente déjà en cours pour ce billet', 'HTTP');
-  locks.add(id);
-  const { priceDrops, sellerDrops, commissionDrops } = splitResale(priceXrp, event.commissionPct);
-  const txs = [];
-  let stage = 'buy-offer';
-  const pending = [];
+  const release = locks.acquire(id, 'revente');
   try {
-    const buy = await offers.createBuyOffer({
-      who: 'org', nftId: id, owner: s.address, amountDrops: sellerDrops, destination: s.address, step: 'resale:org-buy-offer',
-    });
-    txs.push(buy.tx); pending.push(buy.offerId);
-    stage = 'seller-accept';
-    txs.push((await offers.acceptOffer({ who: s.who, offerId: buy.offerId, kind: 'buy', nftId: id, step: 'resale:seller-accept' })).tx);
-    pending.length = 0;
-    stage = 'sell-offer';
-    const sell = await offers.createSellOffer({
-      who: 'org', nftId: id, amountDrops: priceDrops, destination: b.address, step: 'resale:org-sell-offer',
-    });
-    txs.push(sell.tx); pending.push(sell.offerId);
-    stage = 'buyer-accept';
-    txs.push((await offers.acceptOffer({ who: b.who, offerId: sell.offerId, kind: 'sell', nftId: id, step: 'resale:buyer-accept' })).tx);
-    pending.length = 0;
-    return {
-      nftId: id,
-      owner: b.address,
-      sellerReceivedXrp: dropsToXrp(sellerDrops),
-      orgCommissionXrp: dropsToXrp(commissionDrops),
-      txs,
-    };
-  } catch (e) {
-    const c = await offers.cancelQuietly('org', pending, id);
-    if (c) txs.push(c);
-    if (e instanceof AppError) {
-      e.message = `revente échouée à l'étape ${stage}${stage === 'sell-offer' || stage === 'buyer-accept' ? " (billet conservé par l'organisateur)" : ''}: ${e.message}`;
-      e.extra = { txs, stage };
+    const nft = await query.holds(s.address, id);
+    if (!nft) throw new AppError(409, `${s.who} ne détient pas ce billet (absent de account_nfts : brûlé ou déjà revendu)`, 'HTTP');
+    const event = query.eventOrThrow(nft.NFTokenTaxon);
+    if (!withinCap(priceXrp, event.capXrp)) {
+      throw new AppError(400, `prix ${priceXrp} XRP supérieur au plafond ${event.capXrp} XRP`, 'HTTP');
     }
-    throw e;
+    const { priceDrops, sellerDrops, commissionDrops } = splitResale(priceXrp, event.commissionPct);
+    if (sellerDrops <= 0n) throw new AppError(400, 'montant vendeur nul après commission', 'HTTP');
+    const txs = [];
+    let stage = 'buy-offer';
+    const pending = [];
+    try {
+      const buy = await offers.createBuyOffer({
+        who: 'org', nftId: id, owner: s.address, amountDrops: sellerDrops, destination: s.address, step: 'resale:org-buy-offer',
+      });
+      txs.push(buy.tx); pending.push(buy.offerId);
+      stage = 'seller-accept';
+      txs.push((await offers.acceptOffer({ who: s.who, offerId: buy.offerId, kind: 'buy', nftId: id, step: 'resale:seller-accept' })).tx);
+      pending.length = 0;
+      stage = 'sell-offer';
+      const sell = await offers.createSellOffer({
+        who: 'org', nftId: id, amountDrops: priceDrops, destination: b.address, step: 'resale:org-sell-offer',
+      });
+      txs.push(sell.tx); pending.push(sell.offerId);
+      stage = 'buyer-accept';
+      txs.push((await offers.acceptOffer({ who: b.who, offerId: sell.offerId, kind: 'sell', nftId: id, step: 'resale:buyer-accept' })).tx);
+      pending.length = 0;
+      return {
+        nftId: id,
+        owner: b.address,
+        sellerReceivedXrp: dropsToXrp(sellerDrops),
+        orgCommissionXrp: dropsToXrp(commissionDrops),
+        txs,
+      };
+    } catch (e) {
+      const c = await offers.cancelQuietly('org', pending, id);
+      if (c) txs.push(c);
+      if (e instanceof XrplTxError && e.hash && !txs.some((t) => t.hash === e.hash)) {
+        txs.push({ step: e.step, hash: e.hash, result: e.code, explorer: `https://testnet.xrpl.org/transactions/${e.hash}` });
+      }
+      const currentOwner = await readCurrentOwner(id);
+      // Billet resté chez l'org (vendeur payé), ou détenteur illisible après le rachat : « en suspens »,
+      // exclu de la Boutique jusqu'à résolution manuelle (cf. README § Limites).
+      const afterBuyback = ['seller-accept', 'sell-offer', 'buyer-accept'].includes(stage); // rachat possiblement passé
+      if (currentOwner.who === 'org' || (currentOwner.who === 'inconnu' && afterBuyback)) {
+        try {
+          store.setPendingResale(id, { stage, seller: s.who, buyer: b.who, priceXrp: Number(priceXrp), txs: txs.map((t) => t.hash) });
+        } catch (se) { console.error('[resale] marquage pendingResale impossible :', se.message); }
+        currentOwner.pendingResale = true;
+      }
+      const err = e instanceof AppError ? e : new AppError(502, e.message || String(e), 'NETWORK');
+      err.message = failureMessage(stage, currentOwner, s.who, b.who, e.message);
+      err.extra = { txs, stage, currentOwner };
+      throw err;
+    }
   } finally {
-    locks.delete(id);
+    release();
   }
 }
 
@@ -89,7 +128,10 @@ export async function directResale({ nftId, seller, buyer, priceXrp }) {
     throw new AppError(500, 'offre directe acceptée par le ledger : billet transférable ?!', 'tesSUCCESS', r.tx.hash);
   } catch (e) {
     if (e instanceof XrplTxError) {
-      const err = new AppError(409, `revente directe refusée par le protocole XRPL (${e.code})`, e.code, e.hash);
+      const proto = /^tef/.test(String(e.code));
+      const err = new AppError(409, proto
+        ? `revente directe refusée par le protocole XRPL (${e.code})`
+        : `revente directe échouée (${e.code})`, e.code, e.hash);
       err.extra = { txs: [{ step: e.step, hash: e.hash, result: e.code, explorer: `https://testnet.xrpl.org/transactions/${e.hash}` }] };
       throw err;
     }

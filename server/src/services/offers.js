@@ -7,6 +7,8 @@ import * as wallets from '../xrpl/wallets.js';
 import { getClient } from '../xrpl/client.js';
 import * as query from './query.js';
 import { xrpToDrops } from '../xrpl/amounts.js';
+import * as locks from './locks.js';
+import * as store from '../store.js';
 
 /** Offre de VENTE par `who` (Destination optionnelle). */
 export async function createSellOffer({ who, nftId, amountDrops, destination, step = 'sell-offer' }) {
@@ -79,22 +81,30 @@ export async function primaryBuy({ nftId, buyer }) {
   if (!/^[0-9A-F]{64}$/.test(id)) throw new AppError(400, 'nftId invalide', 'HTTP');
   const b = wallets.resolve(buyer);
   if (b.who === 'org') throw new AppError(400, "l'acheteur ne peut pas être l'organisateur", 'HTTP');
-  const nft = await query.holds(wallets.address('org'), id);
-  if (!nft) throw new AppError(409, "billet non disponible à la vente primaire (l'organisateur ne le détient pas)", 'HTTP');
-  const event = query.eventOrThrow(nft.NFTokenTaxon);
-  const txs = [];
-  const offer = await createSellOffer({
-    who: 'org', nftId: id, amountDrops: xrpToDrops(event.priceXrp), destination: b.address, step: 'primary:sell-offer',
-  });
-  txs.push(offer.tx);
+  const release = locks.acquire(id, 'vente primaire');
   try {
-    const acc = await acceptOffer({ who: b.who, offerId: offer.offerId, kind: 'sell', nftId: id, step: 'primary:accept' });
-    txs.push(acc.tx);
-  } catch (e) {
-    const c = await cancelQuietly('org', [offer.offerId], id);
-    if (c) txs.push(c);
-    e.extra = { txs };
-    throw e;
+    const nft = await query.holds(wallets.address('org'), id);
+    if (!nft) throw new AppError(409, "billet non disponible à la vente primaire (l'organisateur ne le détient pas)", 'HTTP');
+    if (store.isPendingResale(id)) {
+      throw new AppError(409, 'billet en suspens (revente interrompue, vendeur déjà payé) : résolution manuelle requise', 'PENDING_RESALE');
+    }
+    const event = query.eventOrThrow(nft.NFTokenTaxon);
+    const txs = [];
+    const offer = await createSellOffer({
+      who: 'org', nftId: id, amountDrops: xrpToDrops(event.priceXrp), destination: b.address, step: 'primary:sell-offer',
+    });
+    txs.push(offer.tx);
+    try {
+      const acc = await acceptOffer({ who: b.who, offerId: offer.offerId, kind: 'sell', nftId: id, step: 'primary:accept' });
+      txs.push(acc.tx);
+    } catch (e) {
+      const c = await cancelQuietly('org', [offer.offerId], id);
+      if (c) txs.push(c);
+      e.extra = { txs };
+      throw e;
+    }
+    return { nftId: id, owner: b.address, txs };
+  } finally {
+    release();
   }
-  return { nftId: id, owner: b.address, txs };
 }

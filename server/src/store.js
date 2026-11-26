@@ -46,6 +46,19 @@ export function saveTicket(nftId, data) {
   update((db) => { db.tickets[nftId.toUpperCase()] = data; });
 }
 
+/**
+ * Revente interrompue après le rachat par l'org : le billet est chez l'organisateur, vendeur déjà payé.
+ * Marqué « en suspens » (tickets[].pendingResale) pour qu'il ne réapparaisse PAS en Boutique / vente primaire
+ * tant que la situation n'est pas réglée à la main (remboursement ou relance de la vente à l'acheteur).
+ */
+export function setPendingResale(nftId, info) {
+  update((db) => {
+    const id = String(nftId).toUpperCase();
+    db.tickets[id] = { ...(db.tickets[id] || {}), pendingResale: { ...info, at: new Date().toISOString() } };
+  });
+}
+export const isPendingResale = (nftId) => Boolean(getTicketMeta(nftId)?.pendingResale);
+
 /** Réserve `count` numéros de siège consécutifs pour l'événement. */
 export function reserveSeats(eventId, count) {
   return update((db) => {
