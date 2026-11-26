@@ -33,6 +33,10 @@ export function loadOrCreateMetadata(event, seat) {
   const committed = path.join(config.metadataDir, rel);
   if (fs.existsSync(committed)) return fs.readFileSync(committed);
   const generated = path.join(config.generatedMetadataDir, rel);
+  if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(config.publicBaseUrl)) {
+    console.warn(`[mint] ${rel} absent de metadata/ (pré-générés : A-001..A-060) : fichier généré localement, `
+      + `son URI ${config.publicBaseUrl} ne se résoudra qu'après commit + push de metadata/${rel}`);
+  }
   if (!fs.existsSync(generated)) {
     fs.mkdirSync(path.dirname(generated), { recursive: true });
     fs.writeFileSync(generated, `${JSON.stringify(metadataJson(event, seat), null, 2)}\n`);
