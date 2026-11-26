@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Crée (une seule fois) les comptes Testnet org / alice / bob, finance via faucet, écrit les seeds dans .env.
 // Usage : npm run setup [-- --force]   (--force : régénère les 3 comptes)
+//         npm run setup -- --tokens-only (génère seulement ADMIN_TOKEN / GATE_TOKEN aléatoires si vides/par défaut)
 // Les seeds ne sont JAMAIS affichées ; seules les adresses publiques le sont (et écrites dans docs/accounts.md).
 import fs from 'node:fs';
 import path from 'node:path';
 import xrpl from 'xrpl';
-import { ensureEnvFile, setEnvVars } from './lib-env.js';
+import { ensureEnvFile, setEnvVars, ensureTokens } from './lib-env.js';
 import { config, WHO, ROOT } from '../server/src/config.js';
 import { SEED_VARS } from '../server/src/xrpl/wallets.js';
 import { connectAny } from '../server/src/xrpl/client.js';
@@ -13,6 +14,8 @@ import { fundAddress } from '../server/src/xrpl/faucet.js';
 
 const force = process.argv.includes('--force');
 if (ensureEnvFile()) console.log('.env créé depuis .env.example');
+for (const k of ensureTokens()) console.log(`${k} : jeton aléatoire généré dans .env (valeur non affichée : \`grep ${k} .env\`)`);
+if (process.argv.includes('--tokens-only')) process.exit(0);
 
 const { client, url } = await connectAny(config.wsUrls, { log: console.log });
 

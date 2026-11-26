@@ -4,9 +4,10 @@
 //         npm run e2e -- --step  (pause « Entrée » entre les étapes, pour la soutenance)
 // Utilise directement la couche services/ (pas d'HTTP). Code de sortie ≠ 0 si une assertion échoue.
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import readline from 'node:readline/promises';
-import { ROOT } from '../server/src/config.js';
+import { ROOT, config } from '../server/src/config.js';
 import * as wallets from '../server/src/xrpl/wallets.js';
 import { getClient, getNetworkUrl, disconnect } from '../server/src/xrpl/client.js';
 import { fundAddress } from '../server/src/xrpl/faucet.js';
@@ -15,7 +16,8 @@ import { TF_BURNABLE, TF_TRANSFERABLE } from '../server/src/xrpl/memo.js';
 import { mintTickets } from '../server/src/services/mint.js';
 import { primaryBuy } from '../server/src/services/offers.js';
 import { resale, directResale } from '../server/src/services/resale.js';
-import { checkin } from '../server/src/services/gate.js';
+import { checkin, ticketQr } from '../server/src/services/gate.js';
+import { signQr } from '../server/src/security.js';
 import * as query from '../server/src/services/query.js';
 
 // --step n'a de sens qu'en terminal interactif (sinon readline se ferme à la fin de stdin).
@@ -23,6 +25,7 @@ const STEP_MODE = process.argv.includes('--step') && Boolean(process.stdin.isTTY
 if (process.argv.includes('--step') && !STEP_MODE) console.log('(--step ignoré : stdin n\'est pas un terminal)');
 const EVENT_ID = 1;
 const rows = []; // { step, hash, result, explorer }
+const ticketInfo = {}; // NFTokenID + siège du billet suivi, écrits dans demo/last-run.md
 const rl = STEP_MODE ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null;
 
 class AssertionFailed extends Error {}
@@ -79,7 +82,13 @@ async function ensureFunds() {
     if (bal < xrpToDrops(xrp)) {
       console.log(`    ${who} : ${dropsToXrp(bal)} XRP < ${xrp} -> recharge faucet`);
       await fundAddress(wallets.address(who));
-      await new Promise((r) => setTimeout(r, 6000));
+      let now = bal;
+      for (let i = 0; i < 20 && now <= bal; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        now = await query.balanceDrops(wallets.address(who));
+      }
+      assert(now > bal, `recharge faucet de ${who} non constatée on-chain (solde inchangé ${dropsToXrp(bal)} XRP)`);
+      console.log(`    ${who} : ${dropsToXrp(now)} XRP après recharge`);
     }
   }
 }
@@ -92,6 +101,7 @@ function writeReport(ok, error) {
     `- Réseau : \`${getNetworkUrl() || '?'}\``,
     `- Comptes : org \`${wallets.address('org')}\`, alice \`${wallets.address('alice')}\`, bob \`${wallets.address('bob')}\``,
     `- Statut : **${ok ? 'SUCCÈS' : `ÉCHEC — ${error}`}**`,
+    `- Billet suivi : siège **${ticketInfo.seat || '?'}**, NFTokenID \`${ticketInfo.nftId || '?'}\`${ticketInfo.nftId ? ` ([explorer](https://testnet.xrpl.org/nft/${ticketInfo.nftId}))` : ''}`,
     '',
     '| Étape | Transaction | Hash | Résultat | Lien |',
     '|---|---|---|---|---|',
@@ -104,9 +114,22 @@ function writeReport(ok, error) {
   fs.writeFileSync(path.join(ROOT, 'demo', 'last-run.md'), lines.join('\n'));
 }
 
+/** Le serveur API utilise les MÊMES comptes : actions UI simultanées = conflits (Sequence, billets, soldes). */
+function apiServerRunning() {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port: config.port, path: '/api/health', timeout: 1500 }, (res) => { res.resume(); resolve(true); });
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
+  });
+}
+
 let ok = false;
 let errMsg = '';
 try {
+  if (await apiServerRunning()) {
+    console.warn(`⚠  Serveur API détecté sur 127.0.0.1:${config.port} : il utilise les mêmes comptes que ce script.`);
+    console.warn('   N\'agissez pas dans l\'interface pendant l\'e2e (conflits de Sequence / soldes faussés), ou arrêtez le serveur.');
+  }
   await getClient();
   console.log(`Réseau : ${getNetworkUrl()}`);
   console.log(`org=${wallets.address('org')}  alice=${wallets.address('alice')}  bob=${wallets.address('bob')}`);
@@ -134,6 +157,7 @@ try {
       console.log(`    ${t.seat} ${t.nftId}  flags=${nft.Flags}`);
     }
     nftId = tickets[0].nftId;
+    Object.assign(ticketInfo, { nftId, seat: tickets[0].seat, unsoldNftId: tickets[1].nftId });
   });
 
   await step(2, `Vente primaire billet ${tickets?.[0]?.seat} à alice (${event.priceXrp} XRP)`, async () => {
@@ -175,9 +199,33 @@ try {
     assert(await query.holds(bob, nftId), 'bob détient toujours le billet');
   });
 
-  await step(6, 'Check-in de bob : NFTokenBurn (Owner=bob) + memo ledgerpass/checkin', async () => {
-    const r = await checkin({ nftId, holder: bob });
-    record('6 check-in', r.tx);
+  let qr;
+  await step(6, 'Contrôles refusés AVANT le check-in (QR non signé, expiré, futur, forgé, mauvais détenteur, org, autre événement)', async () => {
+    qr = await ticketQr('bob', nftId); // QR signé par (le backend pour) bob, valable 60 s
+    const bobW = wallets.getWallet('bob');
+    const cases = [
+      ['QR non signé', { nftId, holder: bob }, /non signé/],
+      ['QR expiré', signQr(bobW, nftId, Date.now() - 120_000), /expiré/],
+      ['QR daté dans le futur (+60 s)', signQr(bobW, nftId, Date.now() + 60_000), /futur/],
+      ['QR forgé (ts modifié)', { ...qr, ts: qr.ts + 1 }, /forgé/],
+      ['QR au nom de bob signé par alice', { ...signQr(wallets.getWallet('alice'), nftId), holder: bob }, /forgé/],
+      ['mauvais détenteur (alice)', signQr(wallets.getWallet('alice'), nftId), /ne détient pas/],
+      ['porteur = org (billet invendu)', signQr(wallets.getWallet('org'), ticketInfo.unsoldNftId), /organisateur/],
+      ['autre événement contrôlé', { ...qr, eventId: 2 }, /événement/],
+    ];
+    for (const [label, body, re] of cases) {
+      const e = await expectError(() => checkin(body), (err) => err.status === 409 && re.test(err.reason || ''), label);
+      record('6 refus', [], `${label} : ${e.reason}`);
+      console.log(`    ${label.padEnd(34)} -> ${e.reason}`);
+    }
+    assert(await query.holds(bob, nftId), 'bob détient toujours le billet');
+  });
+
+  await step(7, 'Check-in de bob avec QR signé : NFTokenBurn (Owner=bob) + memo ledgerpass/checkin', async () => {
+    qr = await ticketQr('bob', nftId); // QR régénéré (comme l'UI toutes les 30 s ; utile en mode --step)
+    const r = await checkin({ ...qr, eventId: EVENT_ID });
+    record('7 check-in', r.tx);
+    ticketInfo.burnHash = r.tx.hash;
     assert(r.granted === true && r.tx.result === 'tesSUCCESS', 'accès accordé');
     assert(!(await query.holds(bob, nftId)), 'billet absent de account_nfts(bob)');
     const client = await getClient();
@@ -186,16 +234,16 @@ try {
     assert(memo && Buffer.from(memo.MemoType, 'hex').toString() === 'ledgerpass/checkin', 'memo ledgerpass/checkin présent');
   });
 
-  await step(7, 'Re-scan du même QR -> refusé', async () => {
-    const e = await expectError(() => checkin({ nftId, holder: bob }), (err) => err.status === 409 && err.reason, 'rescan');
-    record('7 rescan', [], `refusé : ${e.reason}`);
+  await step(8, 'Re-scan du même QR -> refusé (billet brûlé)', async () => {
+    const e = await expectError(() => checkin(qr), (err) => err.status === 409 && /brûlé/.test(err.reason || ''), 'rescan');
+    record('8 rescan', [], `refusé : ${e.reason}`);
     console.log(`    ${e.reason}`);
   });
 
-  await step(8, 'bob tente de revendre le billet brûlé -> refusé', async () => {
+  await step(9, 'bob tente de revendre le billet brûlé -> refusé', async () => {
     const e = await expectError(() => resale({ nftId, seller: 'bob', buyer: 'alice', priceXrp: 15 }),
-      (err) => err.status === 409, 'revente billet brûlé');
-    record('8 revente billet brûlé', [], `refusé : ${e.message}`);
+      (err) => err.status === 409 && /ne détient pas/.test(err.message), 'revente billet brûlé');
+    record('9 revente billet brûlé', [], `refusé : ${e.message}`);
     const t = await query.ticket(nftId);
     assert(t.burned === true && t.owner === null, `statut on-chain burned=${t.burned} owner=${t.owner}`);
   });

@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, ENV_PATH } from '../server/src/config.js';
+import { isWeakToken, randomToken } from '../server/src/security.js';
 
 export function ensureEnvFile() {
   if (fs.existsSync(ENV_PATH)) return false;
@@ -19,4 +20,17 @@ export function setEnvVars(vars) {
     process.env[k] = v;
   }
   fs.writeFileSync(ENV_PATH, text, { mode: 0o600 });
+}
+
+/**
+ * Remplace ADMIN_TOKEN / GATE_TOKEN vides ou d'exemple par des jetons aléatoires (crypto.randomBytes).
+ * N'affiche jamais les valeurs. Retourne la liste des variables régénérées.
+ */
+export function ensureTokens() {
+  const changed = {};
+  for (const k of ['ADMIN_TOKEN', 'GATE_TOKEN']) {
+    if (isWeakToken(process.env[k])) changed[k] = randomToken();
+  }
+  if (Object.keys(changed).length) setEnvVars(changed);
+  return Object.keys(changed);
 }
