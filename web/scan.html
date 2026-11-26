@@ -27,6 +27,9 @@
         <input id="gate-token" class="grow" type="password" autocomplete="off" placeholder="X-Gate-Token (cf. .env du serveur)" />
         <button id="gate-save" class="btn">Enregistrer</button>
       </div>
+      <label>Événement contrôlé (Taxon)
+        <input id="gate-event" type="number" min="0" step="1" value="1" />
+      </label>
       <p class="hint" id="gate-state"></p>
     </div>
 
@@ -44,8 +47,8 @@
 
       <div class="card">
         <h2>Saisie manuelle</h2>
-        <label><span>Contenu du QR (JSON) <small>ou NFTokenID seul</small></span>
-          <textarea id="manual-json" rows="4" class="mono" placeholder='{"nftId":"0001…","holder":"r…"}'></textarea>
+        <label><span>Contenu du QR signé (JSON, valable 60 s)</span>
+          <textarea id="manual-json" rows="4" class="mono" placeholder='{"nftId":"0001…","holder":"r…","ts":…,"pubKey":"…","sig":"…"}'></textarea>
         </label>
         <label>Adresse du porteur (si non incluse ci-dessus)
           <input id="manual-holder" class="mono" placeholder="r…" />

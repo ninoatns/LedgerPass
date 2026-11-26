@@ -118,8 +118,19 @@ export function timeline(container, title, expectedSteps = []) {
     },
     fail(e, extra, { hideError = false } = {}) {
       finish('failure');
-      list.querySelectorAll('li.wait').forEach((li) => li.remove());
+      list.innerHTML = '';
+      // Transactions déjà passées avant l'échec (échec partiel : revente 4 tx, vente primaire…)
+      const body = (e && e.body) || {};
+      (body.txs || []).forEach((tx, i) =>
+        list.append(h('li.step', {}, h('span.dot.' + resultClass(tx.result), {}, i + 1),
+          h('div.step-body', {}, h('span.label', {}, stepLabel(tx.step)),
+            h('div.step-meta', {}, h('span.res.' + resultClass(tx.result), {}, tx.result), txLink(tx))))));
       if (!hideError) box.append(errorBox(e));
+      if (body.stage) {
+        const owner = body.currentOwner;
+        box.append(h('p.small', {}, 'Étape en échec : ', h('code', {}, body.stage),
+          owner ? [' · détenteur actuel (relu on-chain) : ', h('b', {}, owner.who || 'aucun'), owner.address ? h('span.mono.muted', {}, ` ${short(owner.address)}`) : null] : null));
+      }
       if (extra) box.append(extra);
     },
   };
@@ -155,11 +166,32 @@ export function toast(msg, kind = 'info') {
   setTimeout(() => t.remove(), 4000);
 }
 
+/**
+ * Écran d'erreur BLOQUANT (backend injoignable) : pas de bascule silencieuse vers le mock.
+ * Le mock reste accessible explicitement par ?mock=1.
+ */
+export function fatalScreen(e) {
+  const url = new URL(location.href);
+  url.searchParams.set('mock', '1');
+  const wrap = h('div.fatal', { role: 'alertdialog', 'aria-modal': 'true', 'aria-labelledby': 'fatal-title' },
+    h('div.fatal-inner', {},
+      h('h2', { id: 'fatal-title' }, 'Backend LedgerPass injoignable'),
+      h('p', {}, (e && e.message) || String(e)),
+      h('p', {}, 'Lancez l\'API (', h('code', {}, 'npm run dev'), ', http://127.0.0.1:3000/api/health) puis réessayez. ',
+        'Aucune donnée affichée ici ne proviendrait du Testnet.'),
+      h('div.row', {},
+        h('button.btn.primary', { onclick: () => location.reload() }, 'Réessayer'),
+        h('a.btn.ghost', { href: url.toString() }, 'Ouvrir la démo simulée (?mock=1)'))));
+  document.body.append(wrap);
+  return wrap;
+}
+
 /** Bandeau réseau + badges, commun aux deux pages. */
 export function renderStatus(node, health) {
   node.innerHTML = '';
   node.append(
-    h('span.pill', { title: 'Nœud XRPL utilisé par le backend' }, h('span.led'), 'Réseau : ', h('b', {}, health.network || '?')),
+    h('span.pill', { title: 'Nœud XRPL utilisé par le backend' }, h('span.led'), 'Réseau : ',
+      health.network ? h('b', {}, health.network) : h('b.warn', {}, `XRPL en reconnexion (${health.status || '?'})`)),
     h('span.pill', {}, 'Ledger : ', h('b.mono', { id: 'ledger-idx' }, health.ledgerIndex ?? '?')),
     h('span.badge.custodial', { title: 'Le backend détient les seeds Testnet et signe pour org/alice/bob' },
       'Mode démo custodial — en production l\'utilisateur signe avec son wallet (GemWallet/Xaman)'),

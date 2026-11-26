@@ -232,6 +232,7 @@ textarea { resize: vertical; }
 .verdict { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; color: #fff; text-align: center; }
 .verdict.granted { background: #0a7a35; }
 .verdict.denied { background: #b3121f; }
+.verdict.unknown { background: #c25e00; }
 .verdict.pending { background: rgba(13, 19, 33, .92); }
 .verdict-inner { max-width: 900px; }
 .verdict-icon { font-size: clamp(5rem, 18vw, 11rem); font-weight: 900; line-height: 1; }
@@ -263,3 +264,10 @@ textarea { resize: vertical; }
 }
 .step-id { font-family: var(--mono); font-size: 11px; color: var(--muted, #6b7280); background: none; padding: 0; margin-left: 4px; }
 .nowrap { white-space: nowrap; }
+
+/* Écran bloquant « backend injoignable » (pas de bascule silencieuse vers le mock) */
+.fatal { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgba(13, 19, 33, .94); }
+.fatal-inner { max-width: 620px; background: var(--card); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); overflow-wrap: anywhere; }
+.fatal-inner h2 { margin-top: 0; color: #b3121f; }
+/* QR signé : compte à rebours */
+.qr-timer { font-variant-numeric: tabular-nums; margin: 6px 0 0; }

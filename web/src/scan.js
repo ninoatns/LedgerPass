@@ -1,6 +1,6 @@
 // Page de contrôle d'entrée (scan.html) : QR caméra ou saisie manuelle → POST /gate/checkin.
 import { api, init, isMock } from './api.js';
-import { $, h, short, errorBox, busy, renderStatus, txLink, sessionGet, sessionSet, toast } from './ui.js';
+import { $, h, short, errorBox, busy, renderStatus, txLink, sessionGet, sessionSet, toast, fatalScreen } from './ui.js';
 
 let health = null;
 let scanner = null;
@@ -13,11 +13,13 @@ async function boot() {
     renderStatus($('#status'), health);
   } catch (e) {
     $('#status').replaceChildren(errorBox(e));
+    fatalScreen(e); // même règle que la billetterie : pas de bascule silencieuse vers le mock
+    return;
   }
   if (isMock()) $('#back-link').href = './index.html?mock=1';
 
   const tok = $('#gate-token');
-  tok.value = sessionGet('lp.gateToken') || (isMock() ? 'demo' : '');
+  tok.value = tok.value || sessionGet('lp.gateToken') || (isMock() ? 'demo' : ''); // ne pas écraser une saisie faite pendant le démarrage
   paintGate();
   $('#gate-save').addEventListener('click', () => { sessionSet('lp.gateToken', tok.value.trim()); paintGate(); toast('Jeton enregistré pour cette session', 'ok'); });
   tok.addEventListener('change', () => { sessionSet('lp.gateToken', tok.value.trim()); paintGate(); });
@@ -37,30 +39,37 @@ function paintGate() {
     : h('span.warn', {}, 'Renseignez le jeton de contrôle avant de scanner.'));
 }
 
-/** Accepte : JSON {nftId, holder} | NFTokenID seul (+ holder saisi à part). */
+/**
+ * Accepte : JSON signé {nftId, holder, ts, pubKey, sig} (QR de « Mes billets ») | ancien JSON {nftId, holder}
+ * | NFTokenID seul (+ holder saisi à part). Les formes non signées sont transmises telles quelles : le backend
+ * les refuse avec la raison « QR non signé ».
+ */
 export function parsePayload(raw, holderField = '') {
   const txt = String(raw || '').trim();
-  let nftId = '';
-  let holder = holderField.trim();
+  let o = {};
   if (txt.startsWith('{')) {
-    let o;
     try { o = JSON.parse(txt); } catch { throw new Error('JSON illisible : vérifiez le contenu collé.'); }
-    nftId = String(o.nftId || '').trim();
-    holder = String(o.holder || holder).trim();
   } else {
-    nftId = txt;
+    o = { nftId: txt };
   }
+  const nftId = String(o.nftId || '').trim();
+  const holder = String(o.holder || holderField || '').trim();
   if (!/^[0-9A-Fa-f]{64}$/.test(nftId)) throw new Error('NFTokenID invalide (64 caractères hexadécimaux attendus).');
   if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(holder)) throw new Error('Adresse du porteur invalide (adresse XRPL r… attendue).');
-  return { nftId: nftId.toUpperCase(), holder };
+  const out = { nftId: nftId.toUpperCase(), holder };
+  if (o.sig !== undefined) Object.assign(out, { ts: o.ts, pubKey: o.pubKey, sig: o.sig });
+  return out;
 }
 
-async function checkin({ nftId, holder }) {
+const eventId = () => Number($('#gate-event').value) || 1;
+
+async function checkin(qr) {
+  const { nftId } = qr;
   if (!token()) { toast('Jeton de contrôle manquant', 'ko'); $('#gate-token').focus(); return; }
   locked = true;
   showVerdict('pending', '…', 'Vérification on-chain et NFTokenBurn en cours (≈ 4 s)…');
   try {
-    const r = await api.checkin(nftId, holder, token());
+    const r = await api.checkin(qr, token(), eventId());
     if (r && r.granted) {
       showVerdict('granted', 'ACCÈS AUTORISÉ', h('div', {},
         h('p', {}, 'Billet ', h('span.mono', {}, short(nftId, 10, 6)), ' brûlé : il ne pourra plus jamais être présenté.'),
@@ -72,6 +81,17 @@ async function checkin({ nftId, holder }) {
       log(nftId, false, reason);
     }
   } catch (e) {
+    if (e.code === 'TX_UNKNOWN' || e.code === 'NETWORK') {
+      // Ni accès ni refus : le burn a pu passer ou non. L'agent vérifie le hash avant de décider.
+      const hash = e.hash || (e.body && e.body.hash);
+      const tx = hash ? { hash, result: 'TX_UNKNOWN', explorer: `https://testnet.xrpl.org/transactions/${hash}` } : null;
+      showVerdict('unknown', 'STATUT INCONNU', h('div', {},
+        h('p', {}, hash ? 'Statut inconnu — vérifiez le hash ' : `Statut inconnu (${e.message}) — vérifiez le Journal / l'explorer avant de laisser entrer.`,
+          hash ? txLink(tx, short(hash, 12, 8)) : null),
+        h('p.code', {}, e.code)));
+      log(nftId, null, 'statut inconnu — vérifier le hash', tx);
+      return;
+    }
     const reason = (e.body && e.body.reason) || e.message;
     showVerdict('denied', 'REFUSÉ', h('div', {}, h('p', {}, reason), e.code && e.status !== 409 ? h('p.code', {}, e.code) : null));
     log(nftId, false, reason);
@@ -82,7 +102,7 @@ function showVerdict(kind, title, detail) {
   const v = $('#verdict');
   v.className = 'verdict ' + kind;
   v.hidden = false;
-  $('#verdict-icon').textContent = { granted: '✓', denied: '✕', pending: '' }[kind];
+  $('#verdict-icon').textContent = { granted: '✓', denied: '✕', unknown: '?', pending: '' }[kind];
   $('#verdict-title').textContent = title;
   $('#verdict-detail').replaceChildren(typeof detail === 'string' ? h('p', {}, detail) : detail);
   $('#verdict-close').hidden = kind === 'pending';
@@ -100,7 +120,9 @@ function log(nftId, ok, reason, tx) {
   $('#history').replaceChildren(h('table.tbl', {},
     h('tbody', {}, history.slice(0, 10).map((x) => h('tr', {},
       h('td.muted', {}, x.at.toLocaleTimeString('fr-FR')),
-      h('td', {}, h('span.res.' + (x.ok ? 'ok' : 'ko'), {}, x.ok ? 'AUTORISÉ' : 'REFUSÉ')),
+      h('td', {}, x.ok === null
+        ? h('span.res.warn', {}, 'INCONNU')
+        : h('span.res.' + (x.ok ? 'ok' : 'ko'), {}, x.ok ? 'AUTORISÉ' : 'REFUSÉ')),
       h('td.mono', { title: x.nftId }, short(x.nftId, 10, 6)),
       h('td', {}, x.reason),
       h('td', {}, x.tx ? txLink(x.tx) : ''))))));

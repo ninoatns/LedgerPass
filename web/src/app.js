@@ -3,8 +3,19 @@ import QRCode from 'qrcode';
 import { api, init, isMock, resetMock } from './api.js';
 import {
   $, $$, h, short, fmtXrp, fmtDate, timeline, errorBox, busy, toast, renderStatus,
-  txLink, resultClass, sessionGet, sessionSet, stepLabel,
+  txLink, resultClass, sessionGet, sessionSet, stepLabel, fatalScreen,
 } from './ui.js';
+
+const MAX_MINT = 10; // = MAX_MINT_PER_CALL du backend
+const QR_REFRESH_MS = 30000; // le QR signé vaut 60 s côté contrôle : régénéré toutes les 30 s
+const QR_RETRY_MS = 5000; // nouvel essai rapide après un échec passager de régénération
+const qrTimers = new Map(); // nftId -> minuteurs du QR de CETTE carte (nettoyés au rendu ou à la revente)
+
+function stopQr(nftId) {
+  (qrTimers.get(nftId) || []).forEach((id) => { clearInterval(id); clearTimeout(id); });
+  qrTimers.delete(nftId);
+}
+const stopAllQr = () => [...qrTimers.keys()].forEach(stopQr);
 
 const NAMES = { org: 'Organisateur', alice: 'Alice', bob: 'Bob' };
 const S = {
@@ -25,6 +36,7 @@ async function boot() {
     S.health = await init();
   } catch (e) {
     $('#status').replaceChildren(errorBox(e));
+    fatalScreen(e); // bloquant : pas de bascule silencieuse vers les données simulées
     return;
   }
   renderStatus($('#status'), S.health);
@@ -48,7 +60,11 @@ async function refreshLedger() {
   try {
     const hl = await api.health();
     const n = $('#ledger-idx');
-    if (n) n.textContent = hl.ledgerIndex;
+    if (n) n.textContent = hl.ledgerIndex ?? '?';
+    if (hl.network !== S.health.network) {
+      S.health = { ...S.health, ...hl };
+      renderStatus($('#status'), S.health);
+    }
   } catch { /* silencieux */ }
 }
 
@@ -103,7 +119,7 @@ function setupOrg() {
   paintEventInfo();
 
   const tok = $('#admin-token');
-  tok.value = sessionGet('lp.adminToken');
+  tok.value = tok.value || sessionGet('lp.adminToken');
   if (isMock() && !tok.value) tok.value = 'demo';
   tok.addEventListener('change', () => sessionSet('lp.adminToken', tok.value));
 
@@ -129,7 +145,7 @@ async function onMint(ev) {
   const token = $('#admin-token').value.trim();
   sessionSet('lp.adminToken', token);
   if (!token) { toast('Saisissez le jeton admin', 'ko'); $('#admin-token').focus(); return; }
-  if (!Number.isInteger(count) || count < 1 || count > 20) { toast('Nombre de billets : 1 à 20', 'ko'); return; }
+  if (!Number.isInteger(count) || count < 1 || count > MAX_MINT) { toast(`Nombre de billets : 1 à ${MAX_MINT}`, 'ko'); return; }
   const tl = timeline($('#mint-tl'), `Mint de ${count} billet(s)`, Array.from({ length: count }, (_, i) => `NFTokenMint #${i + 1}`));
   await busy(ev.currentTarget, async () => {
     try {
@@ -172,13 +188,19 @@ async function onLookup(ev) {
   const box = $('#lookup-res');
   await busy(ev.currentTarget, async () => {
     try {
+      if (!/^[0-9A-Fa-f]{64}$/.test(id)) throw new Error('NFTokenID invalide (64 caractères hexadécimaux attendus)');
       const t = await api.ticket(id);
       box.replaceChildren(h('div.lookup', {},
         h('div.kv', {}, h('span', {}, 'Place'), h('b', {}, t.seat)),
         h('div.kv', {}, h('span', {}, 'Statut'), t.burned ? h('b.ko', {}, 'Brûlé (utilisé)') : h('b.ok', {}, 'Valide')),
         h('div.kv', {}, h('span', {}, 'Détenteur'), h('b.mono', {}, t.owner ? `${whoOf(t.owner)} (${short(t.owner)})` : '—')),
         h('ol.tl.compact', {}, (t.history || []).map((tx) => h('li.step', {}, h('span.dot.' + resultClass(tx.result)), h('span.label', {}, stepLabel(tx.step)), txLink(tx))))));
-    } catch (e) { box.replaceChildren(errorBox(e)); }
+    } catch (e) {
+      box.replaceChildren(e.status === 404
+        ? h('div.lookup', {}, h('div.kv', {}, h('span', {}, 'Statut'), h('b.ko', {}, 'Introuvable')),
+          h('p.muted.small', {}, 'Aucun détenteur on-chain, aucun burn, et billet inconnu de LedgerPass.'))
+        : errorBox(e));
+    }
   });
 }
 
@@ -233,6 +255,7 @@ async function renderMine() {
   const who = S.actor;
   const list = $('#mine-list');
   $('#mine-title').textContent = `Billets de ${NAMES[who]}`;
+  stopAllQr();
   list.replaceChildren(h('p.muted', {}, 'Lecture de account_nfts…'));
   if (who === 'org') {
     list.replaceChildren(h('p.empty', {}, 'L\'organisateur détient le stock (onglet Organisateur). Choisissez Alice ou Bob en haut à droite.'));
@@ -247,15 +270,61 @@ async function renderMine() {
 
 function myTicketCard(t, who) {
   const e = eventOf(t.eventId) || {};
-  const holder = addr(who);
-  const payload = JSON.stringify({ nftId: t.nftId, holder });
   const img = h('img.qr', { alt: `QR code du billet ${t.seat}`, width: 220, height: 220 });
-  QRCode.toDataURL(payload, { width: 440, margin: 1, errorCorrectionLevel: 'M' })
-    .then((url) => { img.src = url; })
-    .catch(() => { img.alt = 'QR indisponible'; });
+  const payloadNode = h('code.qrpayload', {}, '…');
+  const timerNode = h('p.qr-timer.small.muted', {}, 'Génération du QR signé…');
+  let payload = '';
+  let expiresAt = 0;
+  let qrError = ''; // dernier échec de régénération (affiché tant qu'aucun QR plus récent n'a été obtenu)
+  const timers = [];
+  qrTimers.set(t.nftId, timers);
+  const valid = () => expiresAt > Date.now();
+  const dropImage = () => { img.removeAttribute('src'); img.alt = 'QR indisponible'; payload = ''; payloadNode.textContent = '…'; };
+  const tick = () => {
+    const left = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+    if (expiresAt && left > 0) {
+      const next = Math.max(0, Math.round((expiresAt - 30000 - Date.now()) / 1000));
+      timerNode.textContent = qrError
+        ? `QR signé valable encore ${left} s · renouvellement échoué (${qrError}), nouvel essai…`
+        : `QR signé valable encore ${left} s · renouvelé dans ${next} s`;
+    } else if (qrError) {
+      if (img.getAttribute('src')) dropImage(); // un QR expiré ne doit plus être présenté
+      timerNode.textContent = `QR indisponible : ${qrError}`;
+    } else if (expiresAt) {
+      if (img.getAttribute('src')) dropImage();
+      timerNode.textContent = 'QR expiré : rafraîchissement…';
+    }
+  };
+  const active = () => qrTimers.get(t.nftId) === timers; // faux après revente ou nouveau rendu
+  const refreshQr = async () => {
+    if (!active()) return;
+    if (!img.isConnected && payload) { stopQr(t.nftId); return; } // carte retirée du DOM
+    try {
+      const qr = await api.ticketQr(who, t.nftId); // signé par le backend pour le détenteur (custodial)
+      const { maxAgeSeconds = 60, ...content } = qr;
+      const nextPayload = JSON.stringify(content);
+      const dataUrl = await QRCode.toDataURL(nextPayload, { width: 440, margin: 1, errorCorrectionLevel: 'M' });
+      if (!active()) return; // billet revendu pendant la requête : ne pas réafficher de QR
+      img.src = dataUrl;
+      img.alt = `QR code du billet ${t.seat}`;
+      payload = nextPayload;
+      expiresAt = Number(qr.ts) + maxAgeSeconds * 1000;
+      payloadNode.textContent = payload;
+      qrError = '';
+    } catch (e) {
+      // Échec passager : on GARDE l'ancien QR tant qu'il est valable, et on réessaie vite.
+      if (!active()) return;
+      qrError = e.message || String(e);
+      if (!valid()) dropImage();
+      timers.push(setTimeout(refreshQr, QR_RETRY_MS));
+    }
+    tick();
+  };
+  refreshQr();
+  timers.push(setInterval(refreshQr, QR_REFRESH_MS), setInterval(tick, 1000));
 
   const others = ['alice', 'bob'].filter((w) => w !== who);
-  const price = h('input', { type: 'number', step: '0.1', min: '0.1', value: Number(e.priceXrp) || 10, 'aria-label': 'Prix de revente (XRP)' });
+  const price = h('input', { type: 'number', step: '0.1', min: '1', value: Number(e.priceXrp) || 10, 'aria-label': 'Prix de revente (XRP)' });
   const buyerSel = h('select', { 'aria-label': 'Acheteur' }, others.map((w) => h('option', { value: w }, NAMES[w])));
   const capWarn = h('p.capwarn', { hidden: true });
   const out = h('div.ticket-out');
@@ -272,9 +341,11 @@ function myTicketCard(t, who) {
   const directBtn = h('button.btn.danger', { onclick: (ev) => onDirect(ev, t, who, buyerSel.value, price.value, out) }, 'Tenter une revente directe (hors plateforme)');
 
   return h('article.myticket', { dataset: { nft: t.nftId } },
-    h('div.myticket-qr', {}, img,
-      h('details', {}, h('summary', {}, 'Contenu du QR'), h('code.qrpayload', {}, payload),
-        h('button.btn.ghost.small', { onclick: () => navigator.clipboard?.writeText(payload).then(() => toast('Copié', 'ok')).catch(() => toast('Copie impossible', 'ko')) }, 'Copier'))),
+    h('div.myticket-qr', {}, img, timerNode,
+      h('details', {}, h('summary', {}, 'Contenu du QR (signé, 60 s)'), payloadNode,
+        h('button.btn.ghost.small', { onclick: () => (payload && navigator.clipboard
+          ? navigator.clipboard.writeText(payload).then(() => toast('Copié', 'ok'))
+          : Promise.reject(new Error('presse-papiers indisponible'))).catch(() => toast('Copie impossible : sélectionnez le texte ci-dessus', 'ko')) }, 'Copier'))),
     h('div.myticket-body', {},
       h('div.ticket-top', {}, h('span.seat', {}, t.seat), h('span.muted', {}, `Plafond ${fmtXrp(e.capXrp)} · commission ${e.commissionPct ?? '?'} %`)),
       h('h3', {}, e.name || `Événement ${t.eventId}`),
@@ -305,11 +376,20 @@ async function onResale(ev, t, seller, buyer, priceXrp, out, e) {
       tl.done(r.txs, h('span', {}, `${NAMES[seller]} reçoit `, h('b', {}, fmtXrp(r.sellerReceivedXrp)), ' · commission organisateur ',
         h('b', {}, fmtXrp(r.orgCommissionXrp)), ` · nouveau détenteur : ${NAMES[buyer]}. `, h('a', { href: '#log' }, 'Voir les soldes →')));
       card.classList.add('sold');
+      stopQr(t.nftId); // seuls les minuteurs de CETTE carte : les autres billets gardent leur QR à jour
+      const qrImg = card.querySelector('img.qr');
+      qrImg.removeAttribute('src');
+      qrImg.alt = 'QR invalide : billet transféré';
+      qrImg.style.visibility = 'hidden'; // pas d'icône d'image cassée sur une carte vendue
+      card.querySelector('.qr-timer').textContent = '';
       card.querySelector('.myticket-qr').append(h('p.ko.small', {}, 'QR invalide : billet transféré'));
       card.querySelector('.resale').replaceChildren(h('p.ok.big', {}, `Revendu à ${NAMES[buyer]} ✓`));
     } catch (err) {
       tl.fail(err, err.status === 400 && Number(priceXrp) > Number(e.capXrp)
-        ? h('p.hint', {}, 'Le plafond est appliqué par LedgerPass, seul acteur capable de créer une offre sur ce NFT.') : null);
+        ? h('p.hint', {}, 'Le plafond est appliqué par LedgerPass, seul acteur capable de créer une offre sur ce NFT.')
+        : (err.code === 'NETWORK' || (err.body && err.body.stage)
+          ? h('p.hint', {}, 'Revente non atomique (4 tx) : vérifiez le Journal (onglet 4) et « Mes billets » de chaque acteur avant de relancer.')
+          : null));
       card.querySelectorAll('button').forEach((b) => { b.disabled = false; });
     }
   });

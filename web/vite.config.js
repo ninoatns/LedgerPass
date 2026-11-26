@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const API = process.env.LEDGERPASS_API || 'http://localhost:3000';
+const API = process.env.LEDGERPASS_API || 'http://127.0.0.1:3000'; // l'API n'écoute que sur 127.0.0.1 par défaut
 
 export default defineConfig({
   root: here,
