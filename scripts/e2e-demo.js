@@ -18,7 +18,9 @@ import { resale, directResale } from '../server/src/services/resale.js';
 import { checkin } from '../server/src/services/gate.js';
 import * as query from '../server/src/services/query.js';
 
-const STEP_MODE = process.argv.includes('--step');
+// --step n'a de sens qu'en terminal interactif (sinon readline se ferme à la fin de stdin).
+const STEP_MODE = process.argv.includes('--step') && Boolean(process.stdin.isTTY);
+if (process.argv.includes('--step') && !STEP_MODE) console.log('(--step ignoré : stdin n\'est pas un terminal)');
 const EVENT_ID = 1;
 const rows = []; // { step, hash, result, explorer }
 const rl = STEP_MODE ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null;
