@@ -1,0 +1,16 @@
+{
+  "events": [
+    {
+      "id": 1,
+      "name": "XRPL Night Live — Démo LedgerPass",
+      "date": "2026-12-12T20:00:00+01:00",
+      "venue": "Salle fictive, Paris",
+      "priceXrp": 10,
+      "capXrp": 25,
+      "commissionPct": 5
+    }
+  ],
+  "tickets": {},
+  "seatCounters": {},
+  "txLog": []
+}
