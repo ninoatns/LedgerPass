@@ -8,3 +8,15 @@ dist/
 *.log
 .DS_Store
 data/generated-metadata/
+# Supports de soutenance : hors dépôt (remis séparément)
+docs/LedgerPass_Soutenance.pptx
+*.pptx
+docs/slides-src/
+docs/oral/
+# Docs techniques : hors dépôt (remises séparément)
+docs/architecture.md
+docs/choix-xrpl.md
+docs/securite.md
+docs/limites.md
+docs/PLAN.md
+docs/api-contract.md
