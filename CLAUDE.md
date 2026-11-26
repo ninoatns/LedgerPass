@@ -9,6 +9,7 @@ Hackathon XRPL Bac+5 ING5 CReATE — 25→27/11/2026. Soutenance **ven. 27/11, 1
 3. **Vérifier plutôt que supposer** : tout comportement XRPL (flags, burn, royalty, broker…) est confirmé par la doc xrpl.org / js.xrpl.org ou par une vraie transaction Testnet avant d'être affirmé dans le code, le README ou les slides.
 4. **Prioriser selon le barème** (/20) : Pertinence blockchain 6 · Étude technique 5 · PoC & démo 4 · Organisation 3 · Soutenance 2. Le MVP qui marche passe avant tout bonus.
 5. Répondre en **français**.
+7. **Toute production d'un sous-agent est relue par un autre sous-agent indépendant** (code : bugs/sécurité ; slides/docs : exactitude vs code et résultats Testnet) avant commit. Le relecteur est en lecture seule et ne reçoit pas les conclusions de l'auteur.
 6. **Claude réalise tout le projet** (code, README, docs, slides) — les rôles de la fiche ne servent pas à répartir le travail. L'utilisateur fournit uniquement les accès et les décisions ; Claude le guide point par point.
 
 ## Règles de sécurité (obligatoires — consignes du challenge)
